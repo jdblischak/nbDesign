@@ -27,6 +27,7 @@
 #'
 #' @export
 #'
+#' @import data.table
 #' @importFrom stats rexp runif
 #' @importFrom simtrial rpwexp_enroll
 nb_sim <- function(enroll_rate, fail_rate, dropout_rate = NULL, max_followup = NULL, n = NULL) {
@@ -51,128 +52,96 @@ nb_sim <- function(enroll_rate, fail_rate, dropout_rate = NULL, max_followup = N
   }
   enroll_times <- sort(enroll_times)[seq_len(n)]
 
-  # Assign treatments
-  # Assuming simple randomization based on fail_rate rows?
-  # sim_pw_surv usually takes n as argument but treatment allocation is often separate or implied.
-  # Here we'll assume equal allocation or derived from fail_rate rows if multiple treatments.
+  # Assign treatments with approximately balanced allocation
   treatments <- unique(fail_rate$treatment)
   if (length(treatments) == 0) {
     stop("fail_rate must include at least one treatment")
   }
-
-  # Create approximately balanced randomization similar to simtrial::sim_pw_surv
   assigned_trt <- sample(rep(treatments, length.out = n))
 
-  # 2. Generate Event and Censoring Times
+  # Prepare data.tables
+  dt_subjects <- data.table(
+    id = seq_len(n),
+    treatment = assigned_trt,
+    enroll_time = enroll_times
+  )
+  dt_fail <- data.table(fail_rate)
+  setkey(dt_fail, treatment)
+  dt_subjects <- dt_fail[dt_subjects, on = "treatment"]
+  setnames(dt_subjects, "rate", "lambda")
 
-  out_list <- vector("list", n)
+  if (any(is.na(dt_subjects$lambda))) {
+    stop("Each treatment must have an associated failure rate.")
+  }
 
-  for (i in 1:n) {
-    trt <- assigned_trt[i]
-    ent <- enroll_times[i]
+  dropout_dt <- NULL
+  if (!is.null(dropout_rate)) {
+    dropout_dt <- data.table(dropout_rate)
+  }
 
-    # Get failure rate for this treatment
-    lambda <- fail_rate$rate[fail_rate$treatment == trt]
-    if (length(lambda) == 0) stop(paste("No failure rate found for treatment", trt))
-    if (length(lambda) > 1) lambda <- lambda[1] # Take first if multiple (shouldn't happen if properly formatted)
-
-    # Dropout Time
-    # Piecewise exponential dropout
-    # If dropout_rate is NULL or rate 0, dropout_time is Inf
-    dropout_time <- Inf
-    if (!is.null(dropout_rate)) {
-      # Filter dropout rates for this treatment (if specific) or use general
-      dr <- dropout_rate
-      if ("treatment" %in% names(dr)) {
-        dr <- dr[dr$treatment == trt, ]
-      }
-
-      # Generate piecewise exponential time
-      # Algorithm:
-      # 1. Start at t=0.
-      # 2. For each interval, generate exponential.
-      # 3. If time < duration, event occurs. Else, subtract duration and move to next interval.
-
-      t_curr <- 0
-      generated <- FALSE
-      for (j in 1:nrow(dr)) {
-        rate_j <- dr$rate[j]
-        dur_j <- dr$duration[j]
-
-        if (rate_j > 0) {
-          e <- rexp(1, rate_j)
-          if (e < dur_j) {
-            dropout_time <- t_curr + e
-            generated <- TRUE
-            break
-          }
-        }
-        # Survived this interval
-        t_curr <- t_curr + dur_j
-      }
-
-      # If survived all defined intervals, check if there is a final infinite interval implied?
-      # simtrial usually implies last interval extends to infinity if not handled.
-      # If not generated yet, and we ran out of intervals, does it continue with last rate?
-      # Usually sim_pw_surv assumes inputs cover the duration.
-      # If not generated, leave as Inf? Or assume last rate continues?
-      # Let's assume last rate continues if not generated, akin to simtrial behavior often.
-      if (!generated) {
-        last_rate <- tail(dr$rate, 1)
-        if (last_rate > 0) {
-          dropout_time <- t_curr + rexp(1, last_rate)
-        }
-      }
+  compute_dropout_time <- function(trt) {
+    if (is.null(dropout_dt) || nrow(dropout_dt) == 0) {
+      return(Inf)
     }
+    dr_sub <- dropout_dt[
+      is.na(treatment) | treatment == trt
+    ]
+    if (nrow(dr_sub) == 0) {
+      dr_sub <- dropout_dt[is.na(treatment)]
+    }
+    if (nrow(dr_sub) == 0) {
+      return(Inf)
+    }
+    t_curr <- 0
+    for (j in seq_len(nrow(dr_sub))) {
+      rate_j <- dr_sub$rate[j]
+      dur_j <- dr_sub$duration[j]
+      if (!is.na(rate_j) && rate_j > 0) {
+        e <- rexp(1, rate_j)
+        if (e < dur_j) {
+          return(t_curr + e)
+        }
+      }
+      t_curr <- t_curr + dur_j
+    }
+    last_rate <- tail(dr_sub$rate, 1)
+    if (!is.na(last_rate) && last_rate > 0) {
+      return(t_curr + rexp(1, last_rate))
+    }
+    Inf
+  }
 
-    # End of Follow-up for this subject
-    # min(dropout, max_followup)
-    # Note: Trial cutoff is NOT applied here per instructions.
-
+  simulate_subject <- function(id, treatment, enroll_time, lambda) {
+    dropout_time <- compute_dropout_time(treatment)
     end_time <- min(dropout_time, max_followup)
-
-    # Generate Recurrent Events (Poisson Process)
-    # Inter-arrival times ~ Exp(lambda)
-
+    if (!is.finite(end_time)) {
+      end_time <- max_followup
+    }
     event_times <- numeric(0)
-    cum_t <- 0
-
-    while (TRUE) {
-      gap <- rexp(1, lambda)
-      cum_t <- cum_t + gap
-
-      if (cum_t <= end_time) {
-        event_times <- c(event_times, cum_t)
-      } else {
-        break
+    if (!is.na(lambda) && lambda > 0 && end_time > 0) {
+      cum_t <- 0
+      repeat {
+        gap <- rexp(1, lambda)
+        cum_t <- cum_t + gap
+        if (cum_t <= end_time) {
+          event_times <- c(event_times, cum_t)
+        } else {
+          break
+        }
       }
     }
-
-    # Construct records
-    # One row per event + one row for censoring (end_time)
-
-    n_events <- length(event_times)
-
-    ids <- rep(i, n_events + 1)
-    trts <- rep(trt, n_events + 1)
-    ents <- rep(ent, n_events + 1)
     ttes <- c(event_times, end_time)
-    evts <- c(rep(1, n_events), 0) # 1 for event, 0 for censor
-
-    # Calculate calendar time
-    # calendar_time = enroll_time + tte
-    cal_times <- ents + ttes
-
-    out_list[[i]] <- data.frame(
-      id = ids,
-      treatment = trts,
-      enroll_time = ents,
+    data.table(
+      id = id,
+      treatment = treatment,
+      enroll_time = enroll_time,
       tte = ttes,
-      calendar_time = cal_times,
-      event = evts
+      calendar_time = enroll_time + ttes,
+      event = c(rep(1, length(event_times)), 0)
     )
   }
 
-  # Combine all
-  do.call(rbind, out_list)
+  result_dt <- dt_subjects[, simulate_subject(id, treatment, enroll_time, lambda), by = id]
+  setorder(result_dt, id, calendar_time)
+  as.data.frame(result_dt)
 }

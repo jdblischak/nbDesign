@@ -2,6 +2,7 @@
 
 export(nb_sim)
 export(sample_size_nbinom)
+import(data.table)
 importFrom(simtrial,rpwexp_enroll)
 importFrom(stats,rexp)
 importFrom(stats,runif)

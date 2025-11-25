@@ -16,7 +16,8 @@ knitr::opts_chunk$set(
 
 ```{r setup}
 library(nbDesign)
-library(dplyr)
+library(data.table)
+library(ggplot2)
 ```
 
 This vignette demonstrates how to use the `nb_sim()` function to simulate a 2-arm clinical trial with recurrent event outcomes.
@@ -94,16 +95,18 @@ The output contains multiple rows per subject:
 We can aggregate the data to calculate the observed event rates and total follow-up time for each group.
 
 ```{r}
-# Summarize by treatment group
-summary_stats <- sim_data %>%
-  group_by(treatment) %>%
-  summarise(
-    n_subjects = n_distinct(id),
+sim_dt <- as.data.table(sim_data)
+sim_dt[, censor_followup := ifelse(event == 0, tte, 0)]
+summary_stats <- sim_dt[
+  ,
+  .(
+    n_subjects = uniqueN(id),
     total_events = sum(event == 1),
-    total_followup = sum(tte[event == 0]), # Censoring time represents total individual follow-up
-    observed_rate = total_events / total_followup
-  )
-
+    total_followup = sum(censor_followup),
+    observed_rate = sum(event == 1) / sum(censor_followup)
+  ),
+  by = treatment
+]
 print(summary_stats)
 ```
 
@@ -112,11 +115,6 @@ print(summary_stats)
 We can visualize the events and censoring times for each subject.
 
 ```{r, fig.width=7, fig.height=5}
-library(ggplot2)
-
-# Create a plot of patient timelines
-# Each line is a patient. Points are events. 'x' is censoring.
-
 ggplot(sim_data, aes(x = tte, y = factor(id), color = treatment)) +
   geom_line(aes(group = id), color = "gray80") +
   geom_point(data = subset(sim_data, event == 1), shape = 19, size = 2) +

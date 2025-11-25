@@ -14,7 +14,8 @@ RoxygenNote: 7.3.2
 Imports:
     data.table,
     simtrial,
-    stats
+    stats,
+    MASS
 Suggests:
     testthat (>= 3.0.0),
     knitr,

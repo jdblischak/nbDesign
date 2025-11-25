@@ -1,0 +1,21 @@
+test_that("mutze_test runs on cut data", {
+  enroll_rate <- data.frame(rate = 10, duration = 1)
+  fail_rate <- data.frame(treatment = c("Control", "Experimental"), rate = c(0.5, 0.3))
+  dropout_rate <- data.frame(treatment = c("Control", "Experimental"), rate = c(0.1, 0.05), duration = c(10, 10))
+  sim <- nb_sim(enroll_rate, fail_rate, dropout_rate, max_followup = 1.5, n = 40)
+  cut <- cut_data_by_date(sim, cut_date = 1)
+  res <- mutze_test(cut)
+  expect_true(is.list(res))
+  expect_true(all(c("estimate", "se", "z", "p_value", "rate_ratio") %in% names(res)))
+  expect_true(is.finite(res$estimate))
+  expect_true(nrow(res$group_summary) == 2)
+})
+
+test_that("mutze_test handles poisson option", {
+  enroll_rate <- data.frame(rate = 10, duration = 1)
+  fail_rate <- data.frame(treatment = c("Control", "Experimental"), rate = c(0.5, 0.3))
+  sim <- nb_sim(enroll_rate, fail_rate, max_followup = 1, n = 20)
+  cut <- cut_data_by_date(sim, cut_date = 0.8)
+  res <- mutze_test(cut, method = "poisson")
+  expect_true(grepl("Poisson", res$method))
+})

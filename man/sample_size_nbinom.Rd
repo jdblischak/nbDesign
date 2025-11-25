@@ -61,16 +61,7 @@ A list containing:
 \item{n1}{Sample size for group 1}
 \item{n2}{Sample size for group 2}
 \item{n_total}{Total sample size}
-\item{alpha}{Significance level used}
-\item{sided}{Sidedness used (1 or 2)}
-\item{power}{Power of the test}
 \item{exposure}{Average exposure time used in calculation}
-\item{events_n1}{Expected events in group 1}
-\item{events_n2}{Expected events in group 2}
-\item{total_events}{Total expected events}
-\item{variance}{Variance of the log rate ratio}
-\item{accrual_rate}{Computed accrual rates to achieve the required sample size (if accrual_rate provided)}
-\item{accrual_duration}{Accrual durations (if provided)}
 }
 }
 \description{
@@ -84,9 +75,11 @@ sample_size_nbinom(lambda1 = 0.5, lambda2 = 0.3, dispersion = 0.1, power = 0.8)
 # With piecewise accrual
 # 5 patients/month for 3 months, then 10 patients/month for 3 months
 # Trial ends at month 12.
-sample_size_nbinom(lambda1 = 0.5, lambda2 = 0.3, dispersion = 0.1, power = 0.8,
-                   accrual_rate = c(5, 10), accrual_duration = c(3, 3),
-                   trial_duration = 12)
+sample_size_nbinom(
+  lambda1 = 0.5, lambda2 = 0.3, dispersion = 0.1, power = 0.8,
+  accrual_rate = c(5, 10), accrual_duration = c(3, 3),
+  trial_duration = 12
+)
 
 }
 \references{

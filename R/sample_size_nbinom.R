@@ -53,14 +53,16 @@
 #' # With piecewise accrual
 #' # 5 patients/month for 3 months, then 10 patients/month for 3 months
 #' # Trial ends at month 12.
-#' sample_size_nbinom(lambda1 = 0.5, lambda2 = 0.3, dispersion = 0.1, power = 0.8,
-#'                    accrual_rate = c(5, 10), accrual_duration = c(3, 3),
-#'                    trial_duration = 12)
+#' sample_size_nbinom(
+#'   lambda1 = 0.5, lambda2 = 0.3, dispersion = 0.1, power = 0.8,
+#'   accrual_rate = c(5, 10), accrual_duration = c(3, 3),
+#'   trial_duration = 12
+#' )
 #'
 sample_size_nbinom <- function(lambda1, lambda2, dispersion, power = NULL,
                                alpha = 0.025, sided = 1, exposure = NULL, ratio = 1,
                                accrual_rate = NULL, accrual_duration = NULL,
-                               trial_duration = NULL, dropout_rate = 0, 
+                               trial_duration = NULL, dropout_rate = 0,
                                max_followup = NULL, method = "zhu") {
   if (lambda1 <= 0 || lambda2 <= 0) {
     stop("Rates lambda1 and lambda2 must be positive.")
@@ -80,7 +82,7 @@ sample_size_nbinom <- function(lambda1, lambda2, dispersion, power = NULL,
   if (!is.null(max_followup) && max_followup <= 0) {
     stop("max_followup must be positive.")
   }
-  
+
   # Determine mode: Calculate N or Calculate Power
   mode <- "solve_n"
   if (is.null(power)) {
@@ -93,7 +95,9 @@ sample_size_nbinom <- function(lambda1, lambda2, dispersion, power = NULL,
 
   # Helper function for average exposure over [u_min, u_max] given dropout_rate
   avg_exp_func <- function(u_min, u_max, dropout_rate) {
-    if (u_min >= u_max) return(0) # Should not happen in valid segment
+    if (u_min >= u_max) {
+      return(0)
+    } # Should not happen in valid segment
     if (dropout_rate == 0) {
       return((u_min + u_max) / 2)
     } else {
@@ -107,7 +111,7 @@ sample_size_nbinom <- function(lambda1, lambda2, dispersion, power = NULL,
   current_time <- 0
   total_n_accrual <- 0
   total_exposure_mass <- 0
-  
+
   if (!is.null(accrual_rate)) {
     # Handle variable accrual to calculate average exposure
     if (is.null(accrual_duration) || is.null(trial_duration)) {
@@ -116,28 +120,27 @@ sample_size_nbinom <- function(lambda1, lambda2, dispersion, power = NULL,
     if (length(accrual_rate) != length(accrual_duration)) {
       stop("accrual_rate and accrual_duration must have the same length.")
     }
-    
+
     total_accrual_time <- sum(accrual_duration)
     if (total_accrual_time > trial_duration) {
       stop("Total accrual duration cannot exceed trial duration.")
     }
-    
+
     for (i in seq_along(accrual_rate)) {
       r <- accrual_rate[i]
       d <- accrual_duration[i]
-      
+
       n_seg <- r * d
       if (n_seg > 0) {
         # Potential follow-up range (administrative censoring only)
         u_max <- trial_duration - current_time
         u_min <- trial_duration - (current_time + d)
-        
+
         avg_followup <- 0
-        
+
         if (is.null(max_followup) || is.infinite(max_followup) || u_max <= max_followup) {
           # Case 1: No truncation by max_followup (or negligible)
           avg_followup <- avg_exp_func(u_min, u_max, dropout_rate)
-          
         } else if (u_min >= max_followup) {
           # Case 2: All truncated by max_followup
           # Effectively fixed exposure of max_followup
@@ -146,19 +149,18 @@ sample_size_nbinom <- function(lambda1, lambda2, dispersion, power = NULL,
           } else {
             avg_followup <- (1 - exp(-dropout_rate * max_followup)) / dropout_rate
           }
-          
         } else {
           # Case 3: Split
           tau_star <- trial_duration - max_followup
           d1 <- tau_star - current_time
           d2 <- (current_time + d) - tau_star
-          
+
           if (dropout_rate == 0) {
             avg_1 <- max_followup
           } else {
             avg_1 <- (1 - exp(-dropout_rate * max_followup)) / dropout_rate
           }
-          
+
           avg_2 <- avg_exp_func(u_min, max_followup, dropout_rate)
           avg_followup <- (d1 * avg_1 + d2 * avg_2) / d
         }
@@ -168,26 +170,26 @@ sample_size_nbinom <- function(lambda1, lambda2, dispersion, power = NULL,
       }
       current_time <- current_time + d
     }
-    
+
     if (total_n_accrual == 0) {
       stop("Accrual results in 0 patients.")
     }
-    
+
     exposure <- total_exposure_mass / total_n_accrual
   } else {
     # No accrual info provided
     if (is.null(exposure)) {
-       exposure <- 1 # Default if not provided
+      exposure <- 1 # Default if not provided
     }
-    
+
     # Adjust exposure if max_followup is provided (act as a cap)
     if (!is.null(max_followup) && !is.infinite(max_followup)) {
-       exposure <- min(exposure, max_followup)
+      exposure <- min(exposure, max_followup)
     }
-    
+
     # If dropout_rate > 0, adjust fixed exposure
     if (dropout_rate > 0) {
-       exposure <- (1 - exp(-dropout_rate * exposure)) / dropout_rate
+      exposure <- (1 - exp(-dropout_rate * exposure)) / dropout_rate
     }
   }
 
@@ -196,15 +198,15 @@ sample_size_nbinom <- function(lambda1, lambda2, dispersion, power = NULL,
   k <- dispersion
 
   z_alpha <- qnorm(1 - alpha / sided)
-  
+
   n1_c <- 0
   n2_c <- 0
   n_total_c <- 0
   computed_accrual_rate <- NULL
-  
+
   if (mode == "solve_n") {
     z_beta <- qnorm(power)
-    
+
     if (method == "zhu") {
       num <- (z_alpha + z_beta)^2 * ((1 / mu1 + k) + (1 / ratio) * (1 / mu2 + k))
       den <- (log(mu1 / mu2))^2
@@ -214,33 +216,32 @@ sample_size_nbinom <- function(lambda1, lambda2, dispersion, power = NULL,
       # Variance term for Friede
       p1 <- 1 / (1 + ratio)
       p2 <- ratio / (1 + ratio)
-      V <- (1/mu1 + k)/p1 + (1/mu2 + k)/p2
+      V <- (1 / mu1 + k) / p1 + (1 / mu2 + k) / p2
       num <- (z_alpha + z_beta)^2 * V
-      den <- (log(lambda1/lambda2))^2
+      den <- (log(lambda1 / lambda2))^2
       n_total <- num / den
       n1 <- n_total * p1
       n2 <- n_total * p2
     } else {
       stop("Unknown method. Choose 'zhu' or 'friede'.")
     }
-    
+
     n1_c <- ceiling(n1)
     n2_c <- ceiling(n2)
     n_total_c <- n1_c + n2_c
-    
+
     # Scaling accrual logic
     if (!is.null(accrual_rate)) {
-       scaling_factor <- n_total_c / total_n_accrual
-       computed_accrual_rate <- accrual_rate * scaling_factor
+      scaling_factor <- n_total_c / total_n_accrual
+      computed_accrual_rate <- accrual_rate * scaling_factor
     }
-    
   } else {
     # solve_power
     computed_accrual_rate <- accrual_rate
     n_total_c <- total_n_accrual
     n1_c <- n_total_c / (1 + ratio)
     n2_c <- n_total_c * ratio / (1 + ratio)
-    
+
     if (method == "zhu") {
       # z_beta = sqrt( n1 * (log(mu1/mu2))^2 / V ) - z_alpha
       V <- (1 / mu1 + k) + (1 / ratio) * (1 / mu2 + k)
@@ -249,12 +250,12 @@ sample_size_nbinom <- function(lambda1, lambda2, dispersion, power = NULL,
       # z_beta = sqrt( n_total * (log(lambda1/lambda2))^2 / V_bar ) - z_alpha
       p1 <- 1 / (1 + ratio)
       p2 <- ratio / (1 + ratio)
-      V <- (1/mu1 + k)/p1 + (1/mu2 + k)/p2
-      z_beta <- sqrt(n_total_c * (log(lambda1/lambda2))^2 / V) - z_alpha
+      V <- (1 / mu1 + k) / p1 + (1 / mu2 + k) / p2
+      z_beta <- sqrt(n_total_c * (log(lambda1 / lambda2))^2 / V) - z_alpha
     } else {
       stop("Unknown method. Choose 'zhu' or 'friede'.")
     }
-    
+
     power <- pnorm(z_beta)
   }
 
@@ -263,8 +264,8 @@ sample_size_nbinom <- function(lambda1, lambda2, dispersion, power = NULL,
   # Accrual rates imply sample size. If sample size is not integer, what is the variance?
   # Usually variance depends on N.
   # I'll use the n1_c and n2_c as calculated (which might be floats in solve_power mode).
-  
-  variance <- (1/mu1 + k)/n1_c + (1/mu2 + k)/n2_c
+
+  variance <- (1 / mu1 + k) / n1_c + (1 / mu2 + k) / n2_c
 
   # Calculate expected events
   # Expected events = n * mu = n * lambda * exposure

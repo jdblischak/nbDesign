@@ -188,7 +188,7 @@ sample_size_nbinom(
   lambda1 = 0.5,
   lambda2 = 0.4, # Smaller effect size
   dispersion = 0.1,
-  power = NULL,  # Request power calculation
+  power = NULL, # Request power calculation
   accrual_rate = design_result$accrual_rate, # Use computed rates
   accrual_duration = c(3, 3),
   trial_duration = 12,

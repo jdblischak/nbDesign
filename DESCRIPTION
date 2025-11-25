@@ -1,5 +1,5 @@
-Package: nbsample
-Title: Sample Size Calculation for Negative Binomial Outcomes
+Package: nbDesign
+Title: Sample Size Calculation and Simulation for Negative Binomial Outcomes
 Version: 0.1.0
 Authors@R: 
     person("Keaven", "Anderson", email = "keaven_anderson@merck.com", role = c("aut", "cre"))

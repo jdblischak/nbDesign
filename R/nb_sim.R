@@ -28,6 +28,7 @@
 #' @export
 #'
 #' @importFrom stats rexp runif
+#' @importFrom simtrial rpwexp_enroll
 nb_sim <- function(enroll_rate, fail_rate, dropout_rate = NULL, max_followup = NULL, n = NULL) {
   # 1. Generate Enrollment
   # Simplified implementation of piecewise constant enrollment
@@ -40,58 +41,27 @@ nb_sim <- function(enroll_rate, fail_rate, dropout_rate = NULL, max_followup = N
 
   # Calculate total duration and expected N if n not provided
   if (is.null(n)) {
-    n <- sum(enroll_rate$rate * enroll_rate$duration)
-    n <- round(n) # Integer n
+    n <- round(sum(enroll_rate$rate * enroll_rate$duration))
   }
 
-  # Generate enrollment times
-  # We need to sample n times from the piecewise density defined by enroll_rate
-  total_enroll_duration <- sum(enroll_rate$duration)
-
-  # Create a cumulative distribution function for enrollment time
-  # Rates: r_1 for d_1, r_2 for d_2...
-  # Mass in period i: m_i = r_i * d_i
-  # Total mass M = sum(m_i). Note: This M might not equal n if n was forced.
-  # We treat the piecewise constant function as a PDF (scaled).
-
-  mass <- enroll_rate$rate * enroll_rate$duration
-  cum_mass <- c(0, cumsum(mass))
-  total_mass <- tail(cum_mass, 1)
-
-  # Assign random uniform values scaled to total mass
-  u_enroll <- runif(n, 0, total_mass)
-
-  # Find which interval each u falls into
-  # This can be vectorized with cut or findInterval
-  interval_idx <- findInterval(u_enroll, cum_mass, rightmost.closed = TRUE)
-
-  # For a point u in interval i (starting at cum_mass[i]), the time within interval is:
-  # (u - cum_mass[i]) / rate[i]
-  # Total time = sum(duration[1..i-1]) + time_within
-
-  cum_duration <- c(0, cumsum(enroll_rate$duration))
-
-  enroll_times <- numeric(n)
-
-  # Vectorized calculation might be tricky with differing rates, so we iterate or use vectorized math
-  rates_vec <- enroll_rate$rate[interval_idx]
-  start_mass_vec <- cum_mass[interval_idx]
-  start_time_vec <- cum_duration[interval_idx]
-
-  enroll_times <- start_time_vec + (u_enroll - start_mass_vec) / rates_vec
-  enroll_times <- sort(enroll_times) # Usually ids are ordered by enrollment
+  # Generate enrollment times using simtrial helper
+  enroll_times <- simtrial::rpwexp_enroll(n = n, enroll_rate = enroll_rate)
+  if (length(enroll_times) < n) {
+    stop("Failed to generate sufficient enrollment times. Please check enroll_rate specification.")
+  }
+  enroll_times <- sort(enroll_times)[seq_len(n)]
 
   # Assign treatments
   # Assuming simple randomization based on fail_rate rows?
   # sim_pw_surv usually takes n as argument but treatment allocation is often separate or implied.
   # Here we'll assume equal allocation or derived from fail_rate rows if multiple treatments.
   treatments <- unique(fail_rate$treatment)
-  n_arms <- length(treatments)
+  if (length(treatments) == 0) {
+    stop("fail_rate must include at least one treatment")
+  }
 
-  # Simple block randomization or just random assignment?
-  # User prompt didn't specify, but "multiple treatment groups" implies we need to assign them.
-  # We'll use simple random assignment for now.
-  assigned_trt <- sample(treatments, n, replace = TRUE)
+  # Create approximately balanced randomization similar to simtrial::sim_pw_surv
+  assigned_trt <- sample(rep(treatments, length.out = n))
 
   # 2. Generate Event and Censoring Times
 

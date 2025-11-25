@@ -7,6 +7,7 @@ Description: Provides sample size calculation methods for negative binomial outc
     including the methods by Zhu and Lakkis (2014) and Friede and Schmidli (2010).
     Supports piecewise constant accrual rates.
 License: GPL (>= 3)
+URL: https://keaven.github.io/nbDesign/
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
